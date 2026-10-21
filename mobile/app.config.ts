@@ -53,5 +53,8 @@ const config: ExpoConfig = {
       process.env.EXPO_PUBLIC_API_URL ||
       "https://api.susybegula.co.in",
   },
+  experiments: {
+    baseUrl: process.env.EXPO_BASE_URL || "",
+  },
 };
 export default config;
