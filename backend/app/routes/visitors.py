@@ -41,12 +41,15 @@ def invitations(db: Db, member: Property, offset: int = Query(0, ge=0), limit: i
 
 @router.post("/visitors/invitations", status_code=201)
 def invite(data: InvitationInput, db: Db, member: Property):
-    if data.start_at < now():
-        raise HTTPException(422, "Choose a future visit time.")
+    if data.end_at <= now():
+        raise HTTPException(422, "Choose a visit end time in the future.")
+    start_at = data.start_at if data.start_at >= now() else now()
     pin = f"{secrets.randbelow(900000) + 100000}"
     while db.scalar(select(VisitorInvitation.id).where(VisitorInvitation.pin == pin)):
         pin = f"{secrets.randbelow(900000) + 100000}"
-    row = VisitorInvitation(**data.model_dump(), society_id=member.society_id, unit_id=member.unit_id,
+    row_data = data.model_dump()
+    row_data["start_at"] = start_at
+    row = VisitorInvitation(**row_data, society_id=member.society_id, unit_id=member.unit_id,
                             user_id=member.user_id, pin=pin, qr_token=secrets.token_urlsafe(32))
     db.add(row)
     db.flush()

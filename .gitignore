@@ -15,3 +15,10 @@ backend/uploads/
 .vscode
 scratch/
 backend/scratch/
+backend/pgsql/
+backend/data/
+backend/pg.log
+*.db
+*.log
+*.zip
+*.bin

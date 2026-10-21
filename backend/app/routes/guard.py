@@ -59,8 +59,6 @@ def verify_pass(data: VerifyPassInput, db: Db, guard: GuardRole):
         raise HTTPException(404, "Invalid gate pass. No matching invitation found.")
 
     current_time = now()
-    if current_time < invitation.start_at:
-        raise HTTPException(400, f"This pass is scheduled for later: valid from {invitation.start_at.strftime('%d %b %I:%M %p')}.")
     if current_time > invitation.end_at:
         raise HTTPException(400, "This gate pass has expired.")
     if invitation.status != "Active":
@@ -96,8 +94,8 @@ def check_in_visitor(data: CheckInInput, db: Db, guard: GuardRole):
         raise HTTPException(404, "Invitation not found.")
     if invitation.status != "Active":
         raise HTTPException(400, f"Invitation cannot be checked in. Status: {invitation.status}")
-    if not invitation.start_at <= now() <= invitation.end_at:
-        raise HTTPException(409, "This pass is not valid at this time.")
+    if invitation.end_at < now():
+        raise HTTPException(409, "This pass has expired.")
     if not db.scalar(select(ResidentMembership.id).where(ResidentMembership.unit_id == invitation.unit_id,
             ResidentMembership.user_id == invitation.user_id, ResidentMembership.active.is_(True))):
         raise HTTPException(409, "The host no longer has access to this flat.")
@@ -247,6 +245,41 @@ def active_visitors(db: Db, guard: GuardRole):
             "entry_at": v.entry_at
         }
         for v, u, b in records
+    ]
+
+
+@router.get("/visitors/expected")
+def expected_visitors(db: Db, guard: GuardRole):
+    records = db.execute(
+        select(VisitorInvitation, Unit, Building, User)
+        .join(Unit, Unit.id == VisitorInvitation.unit_id)
+        .join(Building, Building.id == Unit.building_id)
+        .join(User, User.id == VisitorInvitation.user_id)
+        .where(
+            VisitorInvitation.society_id == guard.society_id,
+            VisitorInvitation.status == "Active"
+        )
+        .order_by(VisitorInvitation.created_at.desc())
+        .limit(100)
+    ).all()
+
+    return [
+        {
+            "id": inv.id,
+            "name": inv.name,
+            "phone": inv.phone,
+            "pin": inv.pin,
+            "qr_token": inv.qr_token,
+            "tower": b.name,
+            "flat": u.number,
+            "host_name": host.name,
+            "start_at": inv.start_at,
+            "end_at": inv.end_at,
+            "vehicle_number": inv.vehicle_number,
+            "notes": inv.notes,
+            "status": inv.status
+        }
+        for inv, u, b, host in records
     ]
 
 

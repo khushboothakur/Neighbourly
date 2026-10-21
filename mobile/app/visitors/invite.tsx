@@ -38,9 +38,9 @@ export default function Invite() {
     defaultValues: {
       name: "",
       mobile: "",
-      day: localDay(1),
-      start: "18:00",
-      end: "21:00",
+      day: localDay(0),
+      start: "08:00",
+      end: "23:59",
       vehicle_number: "",
       notes: "",
     },
