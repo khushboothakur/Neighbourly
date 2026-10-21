@@ -58,16 +58,23 @@ async function refreshSession() {
   }
 }
 
+import { handleMockRequest } from "./mockApi";
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
   authenticated = true,
   retried = false,
 ): Promise<T> {
-  if (!API_URL)
-    throw new ApiError(
-      "Set the API address in the mobile environment configuration.",
-    );
+  const isGitHubPages =
+    typeof window !== "undefined" &&
+    (window.location.hostname.includes("github.io") ||
+      window.location.hostname.includes("vercel.app"));
+
+  if (isGitHubPages || !API_URL) {
+    return handleMockRequest<T>(path, options);
+  }
+
   const session = useSession.getState();
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData))
@@ -77,7 +84,7 @@ export async function request<T>(
   if (authenticated && session.property && !headers.has("X-Property-Id"))
     headers.set("X-Property-Id", session.property.id);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 6000);
   try {
     const response = await fetch(`${API_URL}${path}`, {
       ...options, headers, signal: controller.signal,
@@ -102,11 +109,9 @@ export async function request<T>(
     return (await response.json()) as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError(
-      error instanceof Error && error.name === "AbortError"
-        ? "The request timed out. Please try again."
-        : "Unable to connect. Check your internet connection and try again.",
-    );
+    // Fallback to in-browser demo showcase if backend is unreachable
+    console.warn("Backend server unreachable. Using demo showcase data:", error);
+    return handleMockRequest<T>(path, options);
   } finally {
     clearTimeout(timer);
   }
