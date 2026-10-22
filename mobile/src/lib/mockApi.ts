@@ -27,7 +27,7 @@ import type {
 } from "../types/api";
 
 // Persistent state key in sessionStorage
-const STATE_KEY = "neighbourly_demo_state_v1";
+const STATE_KEY = "neighbourly_demo_state_v3";
 
 interface DemoState {
   currentPhone: string;
@@ -53,7 +53,7 @@ function getInitialState(): DemoState {
         end_at: new Date(Date.now() + 14400000).toISOString(),
         pin: "482910",
         qr_token: "v1-demo-token-1",
-        status: "Valid",
+        status: "Active",
         notes: "Family friend",
         vehicle_number: "DL 01 AB 1234",
       },
@@ -65,7 +65,7 @@ function getInitialState(): DemoState {
         end_at: new Date(Date.now() + 25200000).toISOString(),
         pin: "719302",
         qr_token: "v1-demo-token-2",
-        status: "Valid",
+        status: "Active",
         notes: "Guest visit",
         vehicle_number: "",
       },
@@ -514,13 +514,28 @@ export async function handleMockRequest<T>(
   }
 
   // 10. Visitors / Invitations
-  if (cleanPath === "/visitors") {
+  if (cleanPath === "/visitors" && method === "GET") {
     return {
       items: state.visitors,
       total: state.visitors.length,
       offset: 0,
       limit: 20,
     } as unknown as T;
+  }
+
+  if (cleanPath.startsWith("/visitors/") && method === "PATCH") {
+    const id = cleanPath.split("/")[2];
+    let bodyData: any = {};
+    try {
+      bodyData = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
+    } catch {}
+    const v = state.visitors.find((item) => item.id === id);
+    if (v) {
+      v.status = bodyData.status || "Allowed";
+      saveState(state);
+      return v as unknown as T;
+    }
+    return { id, status: bodyData.status || "Allowed" } as unknown as T;
   }
 
   if (cleanPath === "/visitors/invitations/list") {
@@ -532,26 +547,25 @@ export async function handleMockRequest<T>(
     } as unknown as T;
   }
 
-  if (cleanPath.startsWith("/visitors/invitations/")) {
-    const id = cleanPath.split("/")[3];
-    const inv = state.invitations.find((i) => i.id === id) || state.invitations[0];
-    return inv as unknown as T;
-  }
-
-  if (cleanPath === "/visitors/invite" && method === "POST") {
+  // CREATE INVITATION: POST /visitors/invitations or POST /visitors/invite
+  if (
+    (cleanPath === "/visitors/invitations" || cleanPath === "/visitors/invite") &&
+    method === "POST"
+  ) {
     let bodyData: any = {};
     try {
-      bodyData = JSON.parse((options.body as string) || "{}");
+      bodyData = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
     } catch {}
+
     const newInv: Invitation = {
       id: "inv-" + Date.now(),
       name: bodyData.name || "Guest Visitor",
-      phone: bodyData.mobile ? "+91" + bodyData.mobile : "+919876543200",
-      start_at: new Date().toISOString(),
-      end_at: new Date(Date.now() + 14400000).toISOString(),
+      phone: bodyData.phone || (bodyData.mobile ? "+91" + bodyData.mobile : "+919876543200"),
+      start_at: bodyData.start_at || new Date().toISOString(),
+      end_at: bodyData.end_at || new Date(Date.now() + 14400000).toISOString(),
       pin: String(Math.floor(100000 + Math.random() * 900000)),
       qr_token: "v1-token-" + Date.now(),
-      status: "Valid",
+      status: "Active",
       notes: bodyData.notes || "",
       vehicle_number: bodyData.vehicle_number || "",
     };
@@ -560,21 +574,41 @@ export async function handleMockRequest<T>(
     return newInv as unknown as T;
   }
 
+  // DELETE INVITATION: DELETE /visitors/invitations/:id
+  if (cleanPath.startsWith("/visitors/invitations/") && method === "DELETE") {
+    const id = cleanPath.split("/")[3];
+    const inv = state.invitations.find((i) => i.id === id);
+    if (inv) {
+      inv.status = "Cancelled";
+      saveState(state);
+    }
+    return { success: true } as unknown as T;
+  }
+
+  // GET SINGLE INVITATION: GET /visitors/invitations/:id
+  if (cleanPath.startsWith("/visitors/invitations/")) {
+    const id = cleanPath.split("/")[3];
+    const inv = state.invitations.find((i) => i.id === id) || state.invitations[0];
+    return inv as unknown as T;
+  }
+
   // 11. Guard API
   if (cleanPath === "/guard/visitors/expected") {
-    return state.invitations.map((i) => ({
-      id: i.id,
-      name: i.name,
-      phone: i.phone,
-      tower: "Tower B",
-      flat: "402",
-      host: user.name,
-      pin: i.pin,
-      qr_token: i.qr_token,
-      start_at: i.start_at,
-      end_at: i.end_at,
-      notes: i.notes,
-    })) as unknown as T;
+    return state.invitations
+      .filter((i) => i.status === "Active")
+      .map((i) => ({
+        id: i.id,
+        name: i.name,
+        phone: i.phone,
+        tower: "Tower B",
+        flat: "402",
+        host: user.name,
+        pin: i.pin,
+        qr_token: i.qr_token,
+        start_at: i.start_at,
+        end_at: i.end_at,
+        notes: i.notes,
+      })) as unknown as T;
   }
 
   if (cleanPath === "/guard/visitors/active") {
@@ -611,13 +645,63 @@ export async function handleMockRequest<T>(
     return units as unknown as T;
   }
 
-  if (cleanPath.startsWith("/guard/visitors/admit") || (cleanPath.includes("/admit") && method === "POST")) {
+  if (
+    cleanPath === "/guard/visitors/check-in" ||
+    cleanPath.startsWith("/guard/visitors/admit") ||
+    (cleanPath.includes("/admit") && method === "POST")
+  ) {
+    let bodyData: any = {};
+    try {
+      bodyData = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
+    } catch {}
+    const invId = bodyData.invitation_id;
+    const inv = state.invitations.find((i) => i.id === invId);
+    if (inv) {
+      inv.status = "Used";
+      state.activeVisitors.unshift({
+        id: "act-" + Date.now(),
+        name: inv.name,
+        phone: inv.phone,
+        kind: "Guest",
+        purpose: inv.notes || "Personal Visit",
+        tower: "Tower B",
+        flat: "402",
+        entry_at: new Date().toISOString(),
+      });
+      state.visitors.unshift({
+        id: "vis-" + Date.now(),
+        name: inv.name,
+        phone: inv.phone,
+        kind: "Guest",
+        gate: "Main Gate",
+        purpose: inv.notes || "Personal Visit",
+        vehicle_number: inv.vehicle_number,
+        status: "Inside",
+        arrived_at: new Date().toISOString(),
+        entry_at: new Date().toISOString(),
+        exit_at: null,
+      });
+      saveState(state);
+    }
     return { success: true } as unknown as T;
   }
 
-  if (cleanPath.includes("/checkout") && method === "POST") {
+  if (
+    (cleanPath.includes("/check-out") || cleanPath.includes("/checkout")) &&
+    method === "POST"
+  ) {
     const visitorId = cleanPath.split("/")[3];
+    const active = state.activeVisitors.find((v) => v.id === visitorId);
     state.activeVisitors = state.activeVisitors.filter((v) => v.id !== visitorId);
+    if (active) {
+      const hist = state.visitors.find(
+        (v) => v.name === active.name || v.id === visitorId
+      );
+      if (hist) {
+        hist.status = "Completed";
+        hist.exit_at = new Date().toISOString();
+      }
+    }
     saveState(state);
     return { success: true } as unknown as T;
   }
