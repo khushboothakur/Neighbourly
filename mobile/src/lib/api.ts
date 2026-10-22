@@ -12,7 +12,7 @@ import type { Page } from "../types/api";
 export const PRIMARY_API_URL = (
   process.env.EXPO_PUBLIC_API_URL ||
   Constants.expoConfig?.extra?.apiUrl ||
-  "https://api.susybegula.co.in"
+  "http://localhost:8000"
 ).replace(/\/$/, "");
 export const API_URL = PRIMARY_API_URL;
 export class ApiError extends Error {

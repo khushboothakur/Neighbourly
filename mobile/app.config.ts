@@ -51,7 +51,7 @@ const config: ExpoConfig = {
     },
     apiUrl:
       process.env.EXPO_PUBLIC_API_URL ||
-      "https://api.susybegula.co.in",
+      "http://localhost:8000",
   },
   experiments: {
     baseUrl: process.env.EXPO_BASE_URL || "",
